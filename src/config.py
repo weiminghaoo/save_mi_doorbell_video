@@ -9,6 +9,7 @@ class Config(NamedTuple):
     schedule_minutes: int
     ffmpeg: str
     merge: bool
+    use_qr_login: bool
 
 
 def from_file(path='config.json') -> Config:

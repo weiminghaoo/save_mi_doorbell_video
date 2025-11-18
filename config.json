@@ -1,8 +1,9 @@
 {
-    "username": "米家账号的用户名",
-    "password": "米家账号的密码",
+    "username": "wei.mh@qq.com",
+    "password": "weimh123@",
     "save_path": "./video",
-    "ffmpeg": "ffmpeg命令的全路径",
+    "ffmpeg": "/opt/homebrew/bin/ffmpeg",
     "schedule_minutes": 1,
-    "merge": false
+    "merge": true,
+    "use_qr_login": true
 }

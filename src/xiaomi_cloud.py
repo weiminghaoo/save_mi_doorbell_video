@@ -8,6 +8,9 @@ import hashlib
 import micloud
 import requests
 from urllib import parse
+from pprint import pprint
+import subprocess
+import sys
 
 from micloud import miutils
 from micloud.micloudexception import MiCloudException
@@ -225,6 +228,17 @@ class MiotCloud(micloud.MiCloud):
                         'room_name': r.get('name'),
                     }
         return rdt
+
+    def qr_login(self):
+        """便捷的二维码登录方法"""
+        try:
+            return self.qr_login_request()
+        except MiCloudAccessDenied as exc:
+            _LOGGER.error('QR login access denied: %s', exc)
+            raise
+        except Exception as exc:
+            _LOGGER.error('QR login failed: %s', exc)
+            raise
 
     def _logout(self):
         self.service_token = None
@@ -490,3 +504,203 @@ class MiotCloud(micloud.MiCloud):
     def get_random_string(length):
         seq = string.ascii_uppercase + string.digits
         return ''.join((random.choice(seq) for _ in range(length)))
+
+    @staticmethod
+    def display_image(content, qr_url=None):
+        """在终端显示二维码图片，并提供在线查看备用方案"""
+        base64_content = base64.b64encode(content).decode('utf-8')
+
+        # 方法1: 使用 Inline Image Protocol 在终端显示图片 (iTerm2)
+        try:
+            print("\033]1337;File=inline=1;width=480px;preserveAspectRatio=1:{}\x07".format(base64_content))
+            print("✅ 二维码已在终端显示")
+        except Exception as e:
+            print(f"⚠️  终端图片显示失败: {e}")
+            print("💡 提示: 如果终端不支持图片显示，可以使用以下备用方案")
+
+        # 备用方案: 提供在线查看链接
+        print("📱 请使用以下方式扫描二维码:")
+
+        # 优先显示直接的小米二维码链接
+        if qr_url:
+            print(f"   1. 🌐 直接访问小米二维码链接: {qr_url}")
+            print("   2. 📱 使用手机相机扫描终端中的二维码")
+        else:
+            # 备用方案：使用第三方二维码生成服务
+            print("   1. 🌐 在线查看: https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=" + base64_content[:100])
+            print("   2. 📱 使用手机相机扫描终端中的二维码")
+
+        # 检查是否有qrencode工具可用
+        if MiotCloud._check_qrencode():
+            MiotCloud._display_ascii_qr()
+
+    @staticmethod
+    def _check_qrencode():
+        """检查系统是否安装了qrencode工具"""
+        try:
+            subprocess.run(['qrencode', '--version'],
+                         capture_output=True, check=True, timeout=5)
+            return True
+        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+            return False
+
+    @staticmethod
+    def _display_ascii_qr():
+        """显示ASCII二维码的安装提示"""
+        try:
+            # 这里我们提示用户可以安装qrencode来获得更好的体验
+            print("\n💡 提示: 安装 qrencode 工具可在终端直接显示二维码:")
+            if sys.platform == "darwin":
+                print("   brew install qrencode")
+            elif sys.platform.startswith("linux"):
+                print("   sudo apt-get install qrencode  # Ubuntu/Debian")
+                print("   sudo yum install qrencode      # CentOS/RHEL")
+        except Exception:
+            pass
+
+    def qr_login_request(self):
+        """二维码登录请求"""
+        self._init_session()
+        response = self._qr_login_step1()
+        location = self._qr_login_step2(response)
+        final_response = self._qr_login_step3(location)
+
+        http_code = final_response.status_code
+        if http_code == 200:
+            return True
+        elif http_code == 403:
+            raise MiCloudAccessDenied(f'QR login to xiaomi error: {final_response.text} ({http_code})')
+        else:
+            _LOGGER.error(
+                'Xiaomi QR login request returned status %s, reason: %s, content: %s',
+                http_code, final_response.reason, final_response.text,
+            )
+            raise MiCloudException(f'QR login to xiaomi error: {final_response.text} ({http_code})')
+
+    def _qr_login_step1(self):
+        """二维码登录第一步：获取二维码"""
+        print("开始二维码登录...")
+
+        data = {
+            '_qrsize': '240',
+            'qs': '%3Fsid%3Dxiaomiio%26_json%3Dtrue',
+            'callback': "https://sts.api.io.mi.com/sts",
+            '_hasLogo': 'false',
+            'sid': 'xiaomiio',
+            'serviceParam': '',
+            '_locale': 'pl_PL',
+            '_dc': str(int(time.time() * 1000))
+        }
+
+        response = self.session.get(
+            'https://account.xiaomi.com/longPolling/loginUrl',
+            params=data,
+        )
+
+        try:
+            response_data = json.loads(response.text.replace("&&&START&&&", ""))
+        except Exception as exc:
+            raise MiCloudException(f'Error getting xiaomi QR code. Cannot parse response. {exc}')
+
+        pprint(response_data)
+        qr_image_url = response_data['qr']
+
+        # 获取并显示二维码
+        qr_response = self.session.get(qr_image_url)
+        image_content = qr_response.content
+
+        # 传递二维码URL给display_image方法
+        self.display_image(image_content, qr_url=qr_image_url)
+
+        print("二维码已显示，请使用小米设备扫描。")
+        print("等待登录...")
+
+        # 保存登录数据供后续步骤使用
+        self.attrs['qr_data'] = response_data
+        return response_data
+
+    def _qr_login_step2(self, qr_data):
+        """二维码登录第二步：长轮询等待扫码"""
+        long_polling_url = qr_data['lp']
+        timeout = qr_data['timeout']
+
+        print("长轮询URL: " + long_polling_url)
+        start_time = time.time()
+
+        # 开始长轮询
+        while True:
+            try:
+                response = self.session.get(long_polling_url, timeout=10)
+            except requests.exceptions.Timeout:
+                print("长轮询超时，重试中...")
+                if time.time() - start_time > timeout:
+                    print(f"长轮询在 {timeout} 秒后超时。")
+                    raise MiCloudException("QR code login timeout")
+                continue
+            except requests.exceptions.RequestException as e:
+                print(f"发生错误: {e}")
+                raise MiCloudException(f"QR code polling error: {e}")
+
+            if response.status_code == 200:
+                break
+            else:
+                print("长轮询失败，重试中...")
+
+        if response.status_code != 200:
+            raise MiCloudException(f"长轮询失败，状态码: {response.status_code}")
+
+        print("登录成功!")
+        print("响应数据:")
+
+        try:
+            response_data = json.loads(response.text.replace("&&&START&&&", ""))
+        except Exception as exc:
+            raise MiCloudException(f'Error parsing QR login response. {exc}')
+
+        pprint(response_data)
+
+        # 设置用户信息
+        self.user_id = str(response_data['userId'])
+        self.ssecurity = response_data['ssecurity']
+        self.cuser_id = response_data['cUserId']
+        self.pass_token = response_data['passToken']
+
+        print(f"用户ID: {self.user_id}")
+        print(f"Ssecurity: {self.ssecurity}")
+        print(f"CUser ID: {self.cuser_id}")
+        print(f"Pass token: {self.pass_token}")
+
+        location = response_data['location']
+        if not location:
+            raise MiCloudException("响应数据中未找到location。")
+
+        return location
+
+    def _qr_login_step3(self, location):
+        """二维码登录第三步：获取service token"""
+        print("获取service token...")
+
+        self.session.headers.update({'content-type': 'application/x-www-form-urlencoded'})
+        response = self.session.get(
+            location,
+            headers={'User-Agent': self.useragent},
+            cookies={'sdkVersion': '3.8.6', 'deviceId': self.client_id},
+        )
+
+        if response.status_code != 200:
+            raise MiCloudException("获取service token失败")
+
+        service_token = response.cookies.get('serviceToken')
+        if service_token:
+            self.service_token = service_token
+            print(f"Service token: {service_token}")
+        else:
+            err = {
+                'location': location,
+                'status_code': response.status_code,
+                'cookies': response.cookies.get_dict(),
+                'response': response.text,
+            }
+            raise MiCloudAccessDenied(f'获取service token失败: {err}')
+
+        return response

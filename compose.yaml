@@ -1,10 +1,7 @@
-version: '3'
 services:
-    doorbell:
-        build:
-            context: .
-        volumes:
-            - './config.json:/app/config.json'
-            - './data.json:/app/data.json'
-            - './video:/app/video'
-            - '/etc/localtime:/etc/localtime'
+  midoorbell:
+    build:
+      context: .
+    volumes:
+      - './config.json:/app/config.json'
+      - './video:/app/video'

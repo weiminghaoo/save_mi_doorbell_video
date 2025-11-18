@@ -10,6 +10,7 @@ class Config(NamedTuple):
     ffmpeg: str
     merge: bool
     use_qr_login: bool
+    cleanup_ts_files: bool
 
 
 def from_file(path='config.json') -> Config:

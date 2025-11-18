@@ -1,7 +1,7 @@
 import sys
 
 import src.xiaomi_cloud as xiaomi_cloud
-from doorbell import MiDoorbell
+from src.doorbell import MiDoorbell
 import src.config as config
 import schedule
 import time
@@ -13,7 +13,11 @@ _LOGGER = logging.getLogger(__name__)
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)s %(message)s',
-                    datefmt='%Y-%m-%d %H:%M:%S')
+                    datefmt='%m-%d %H:%M:%S')
+
+# 设置doorbell模块的日志级别
+doorbell_logger = logging.getLogger('doorbell')
+doorbell_logger.setLevel(logging.DEBUG)
 
 
 class MiDoorbellManager:
@@ -256,7 +260,9 @@ class MiDoorbellManager:
 
                 _LOGGER.info(event.event_desc() + ',视频下载中...')
                 # 保存视频到指定文件
-                path = self.device.download_video(event, self.conf.save_path, self.conf.merge, self.conf.ffmpeg)
+                _LOGGER.debug(f'配置信息: save_path="{self.conf.save_path}", merge={self.conf.merge}, ffmpeg="{self.conf.ffmpeg}", cleanup_ts_files={self.conf.cleanup_ts_files}')
+                device_name = self.device.name
+                path = self.device.download_video(event, self.conf.save_path, self.conf.merge, self.conf.ffmpeg, self.conf.cleanup_ts_files, device_name)
                 _LOGGER.info('视频已保存到：%s', path)
 
             # 存储已经处理过的记录
@@ -276,7 +282,25 @@ class MiDoorbellManager:
         return data
 
     def _save_processed_data(self, data):
-        """保存已处理的数据"""
+        """保存已处理的数据，包含设备信息"""
+        # 添加设备信息到数据中
+        if hasattr(self, 'device') and self.device:
+            device_info = {
+                'name': self.device.name,
+                'did': self.device.miot_did,
+                'model': self.device.model,
+                'type': self.device_type
+            }
+
+            # 如果数据中已有设备信息，检查是否一致
+            if 'device_info' in data:
+                if data['device_info'] != device_info:
+                    _LOGGER.info('设备信息已更新，新设备: %s', device_info['name'])
+            else:
+                _LOGGER.info('添加设备信息: %s', device_info['name'])
+
+            data['device_info'] = device_info
+
         with open(self.data_path, 'w') as fp:
             json.dump(data, fp, ensure_ascii=False, indent=True)
 

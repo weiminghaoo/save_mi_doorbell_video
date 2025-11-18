@@ -18,26 +18,16 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def generate_unique_filename(base_path, extension=""):
-    """生成唯一的文件名，如果文件已存在则添加序号"""
+    """生成文件名，直接覆盖已存在的文件"""
     if not base_path:
         raise ValueError("base_path 不能为空")
 
     if not extension.startswith('.'):
         extension = '.' + extension if extension else ''
 
-    original_path = base_path + extension
-    counter = 1
-
-    # 如果原始文件名不存在，直接返回
-    if not os.path.exists(original_path):
-        return original_path
-
-    # 文件已存在，添加序号
-    while True:
-        new_path = f"{base_path}_{counter}{extension}"
-        if not os.path.exists(new_path):
-            return new_path
-        counter += 1
+    # 直接返回路径，如果文件存在则覆盖
+    # 事件名已包含时间、类型和唯一ID，理论上不会重复
+    return base_path + extension
 
 
 class DoorbellEvent(NamedTuple):
@@ -217,16 +207,35 @@ class MiDoorbell:
         if not ts_path:
             raise ValueError("ts_path 为空")
 
-        os.makedirs(final_path_without_ext, exist_ok=True)
-        os.makedirs(ts_path, exist_ok=True)
+        # 创建目录，增加详细的错误处理
+        try:
+            os.makedirs(final_path_without_ext, exist_ok=True)
+            _LOGGER.debug(f"事件目录已创建: {final_path_without_ext}")
 
-        # 确保目录创建成功
+            os.makedirs(ts_path, exist_ok=True)
+            _LOGGER.debug(f"TS目录已创建: {ts_path}")
+        except OSError as e:
+            _LOGGER.error(f"创建目录失败: {e}")
+            _LOGGER.error(f"尝试创建的路径: {final_path_without_ext}")
+            _LOGGER.error(f"TS路径: {ts_path}")
+            raise OSError(f"无法创建目录: {e}")
+
+        # 确保目录创建成功且有写权限
         if not os.path.exists(ts_path):
-            raise OSError(f"无法创建TS目录: {ts_path}")
+            raise OSError(f"TS目录不存在: {ts_path}")
+
+        if not os.access(ts_path, os.W_OK):
+            raise OSError(f"TS目录无写权限: {ts_path}")
+
+        _LOGGER.debug(f"目录验证通过，可以写入文件: {ts_path}")
 
         # 保存文件的同时，生成文件清单到filelist
         filelist_path = os.path.join(ts_path, "filelist")
         _LOGGER.debug(f"Filelist路径: '{filelist_path}'")
+
+        # 统计总视频段数
+        total_segments = len([line for line in lines if line.decode("utf-8").startswith("http")])
+        _LOGGER.info(f"开始下载视频，共 {total_segments} 个分段")
 
         with open(filelist_path, "w") as filelist:
             for line in lines:
@@ -248,6 +257,10 @@ class MiDoorbell:
                     ts_file_path = os.path.join(ts_path, filename)
                     with open(ts_file_path, "wb") as f:
                         f.write(crypto.decrypt(r.content))
+
+                    # 显示下载进度
+                    progress = (video_cnt / total_segments) * 100
+                    _LOGGER.info(f"下载进度: {video_cnt}/{total_segments} ({progress:.1f}%)")
 
                     # 添加文件名和列表中，方便ffmpeg做视频合并
                     filelist.writelines("file '" + filename + "'\n")
@@ -273,10 +286,33 @@ class MiDoorbell:
             _LOGGER.debug(f"工作目录: {ts_path}")
 
             try:
-                subprocess.check_output(cmd, cwd=ts_path, stderr=subprocess.STDOUT)
-                _LOGGER.debug("FFmpeg执行成功")
-            except subprocess.CalledProcessError as e:
-                error_msg = f"FFmpeg执行失败: {e.output.decode() if e.output else '无错误输出'}"
+                _LOGGER.info(f"开始合并视频分段...")
+                process = subprocess.Popen(
+                    cmd,
+                    cwd=ts_path,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    universal_newlines=True
+                )
+
+                # 实时显示FFmpeg输出
+                while True:
+                    output = process.stdout.readline()
+                    if output == '' and process.poll() is not None:
+                        break
+                    if output:
+                        # 过滤并显示有用的进度信息
+                        line = output.strip()
+                        if 'time=' in line.lower() or 'frame=' in line.lower() or 'bitrate=' in line.lower():
+                            _LOGGER.info(f"合并进度: {line}")
+
+                if process.returncode == 0:
+                    _LOGGER.info("视频合并完成")
+                else:
+                    raise OSError(f"FFmpeg执行失败，返回码: {process.returncode}")
+
+            except Exception as e:
+                error_msg = f"FFmpeg执行失败: {str(e)}"
                 _LOGGER.error(error_msg)
                 raise OSError(error_msg)
 
@@ -310,11 +346,14 @@ class MiDoorbell:
             return "unknown_device"
 
         # 替换不安全的字符
-        unsafe_chars = '<>:"/\\|?*'
+        unsafe_chars = '<>:"/\\|?*()'
         safe_name = device_name
 
         for char in unsafe_chars:
             safe_name = safe_name.replace(char, '_')
+
+        # 替换空格为下划线
+        safe_name = safe_name.replace(' ', '_')
 
         # 移除开头和结尾的空格和点
         safe_name = safe_name.strip(' .')

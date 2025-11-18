@@ -1,2 +1,4 @@
 micloud
 schedule
+requests
+pycryptodome

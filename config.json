@@ -1,9 +1,9 @@
 {
-    "username": "wei.mh@qq.com",
-    "password": "weimh123@",
+    "username": "",
+    "password": "",
     "save_path": "./video",
     "ffmpeg": "/opt/homebrew/bin/ffmpeg",
-    "schedule_minutes": 1,
+    "schedule_minutes": 10,
     "merge": true,
     "use_qr_login": true,
     "cleanup_ts_files": true

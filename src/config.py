@@ -1,4 +1,5 @@
 import json
+import os
 from typing import NamedTuple
 
 
@@ -11,6 +12,15 @@ class Config(NamedTuple):
     merge: bool
     use_qr_login: bool
     cleanup_ts_files: bool
+
+    def get_ffmpeg_path(self) -> str:
+        """获取ffmpeg路径"""
+        # 在Docker环境中直接使用系统ffmpeg
+        if os.getenv('DOCKER_ENV'):
+            return 'ffmpeg'
+
+        # 本地环境使用配置的路径
+        return self.ffmpeg
 
 
 def from_file(path='config.json') -> Config:

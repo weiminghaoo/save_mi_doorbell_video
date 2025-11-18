@@ -1,7 +1,18 @@
+version: '3.8'
+
 services:
-  midoorbell:
-    build:
-      context: .
+  xiaomi-doorbell:
+    build: .
+    container_name: xiaomi-doorbell
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
+    user: "1000:1000"  # 使用与主机相同的用户ID
     volumes:
-      - './config.json:/app/config.json'
-      - './video:/app/video'
+      - ./config.json:/app/config.json:ro
+      - ./video:/app/video
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

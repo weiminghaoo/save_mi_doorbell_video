@@ -27,8 +27,7 @@ class MiDoorbellManager:
         """初始化管理器"""
         self.conf = config.from_file(config_path)
         self.cloud = None
-        self.device = None
-        self.device_type = None
+        self.devices = {}  # 支持多设备 {device_did: device_instance}
         # 确保save_path目录存在
         self._ensure_save_path()
         # data.json保存到save_path目录中
@@ -190,30 +189,29 @@ class MiDoorbellManager:
             raise
 
     def setup_device(self):
-        """设置和配置智能设备"""
+        """设置和配置智能设备，支持多设备"""
         try:
             # 获取米家设备列表
             device_list = self.cloud.get_device_list()
             _LOGGER.info('共获取到%d个设备', len(device_list))
 
-            # 匹配智能门铃或门锁设备
+            # 匹配所有支持的智能设备
             _LOGGER.info('正在自动匹配智能设备...')
-            device = None
-            device_type = None
+            supported_devices = []
+
             for d in device_list:
+                device_type = None
                 # 自动匹配设备类型
                 if d['model'].startswith('madv.cateye.'):
-                    device = d
                     device_type = '门铃'
-                    _LOGGER.info('找到智能门铃设备: %s', d['name'])
-                    break
                 elif d['model'].startswith('xiaomi.lock.'):
-                    device = d
                     device_type = '门锁'
-                    _LOGGER.info('找到智能门锁设备: %s', d['name'])
-                    break
 
-            if not device:
+                if device_type:
+                    supported_devices.append((d, device_type))
+                    _LOGGER.info('找到支持的设备: %s (%s)', d['name'], device_type)
+
+            if not supported_devices:
                 # 未找到支持设备
                 _LOGGER.error('未找到支持的智能设备(门铃/门锁)，请确认以下设备是否包含支持设备：')
                 for device in device_list:
@@ -230,45 +228,100 @@ class MiDoorbellManager:
                 _LOGGER.error('  - 智能门锁: xiaomi.lock.*')
                 sys.exit(1)
 
-            if device_type == '门铃':
-                self.device = MiDoorbell(self.cloud, device['name'], device['did'], device['model'])
-                _LOGGER.info('匹配门铃设备成功，设备名称为:%s(%s)', self.device.name, self.device.model)
-            elif device_type == '门锁':
-                # TODO: 这里可以添加门锁设备的处理逻辑
-                self.device = MiDoorbell(self.cloud, device['name'], device['did'], device['model'])
-                _LOGGER.info('匹配门锁设备成功，设备名称为:%s(%s)', device['name'], device['model'])
+            # 初始化所有找到的设备
+            for device, device_type in supported_devices:
+                device_instance = MiDoorbell(self.cloud, device['name'], device['did'], device['model'])
+                self.devices[device['did']] = {
+                    'instance': device_instance,
+                    'type': device_type,
+                    'info': device
+                }
+                _LOGGER.info('设备初始化成功: %s (%s)', device['name'], device_type)
 
-            self.device_type = device_type
+            _LOGGER.info('总共初始化了 %d 个设备', len(self.devices))
             return True
         except Exception as e:
             _LOGGER.error('设备设置失败: %s', e)
             raise
 
     def check_and_download(self):
-        """检查并下载门铃视频"""
+        """检查并下载所有设备的视频"""
         try:
             # 读取已经处理过的视频，避免重复处理
             data = self._load_processed_data()
 
-            # 获取门铃事件列表(过滤历史已处理)
-            event_list = [event for event in self.device.get_event_list() if event.fileId not in data]
-            _LOGGER.info('本次共获取到%d条门铃事件', len(event_list))
+            total_success = 0
+            total_events = 0
+            total_devices = len(self.devices)
+            current_device_idx = 0
 
-            # 处理并下载视频
-            for event in event_list:
-                data[event.fileId] = event._asdict()
+            # 遍历所有设备
+            for device_did, device_info in self.devices.items():
+                current_device_idx += 1
+                device_instance = device_info['instance']
+                device_type = device_info['type']
+                device_name = device_instance.name
 
-                _LOGGER.info(event.event_desc() + ',视频下载中...')
-                # 保存视频到指定文件
-                _LOGGER.debug(f'配置信息: save_path="{self.conf.save_path}", merge={self.conf.merge}, ffmpeg="{self.conf.ffmpeg}", cleanup_ts_files={self.conf.cleanup_ts_files}')
-                device_name = self.device.name
-                path = self.device.download_video(event, self.conf.save_path, self.conf.merge, self.conf.ffmpeg, self.conf.cleanup_ts_files, device_name)
-                _LOGGER.info('视频已保存到：%s', path)
+                _LOGGER.info('=== 开始处理设备 %d/%d: %s (%s) ===',
+                            current_device_idx, total_devices, device_name, device_type)
 
-            # 存储已经处理过的记录
-            self._save_processed_data(data)
-            _LOGGER.info('本次共处理%d条门铃事件, 历史总处理%d条门铃事件', len(event_list), len(data))
-            return len(event_list)
+                # 获取当前设备的数据
+                device_key = str(device_did)
+                device_data = data.get(device_key, {})
+
+                # 获取门铃事件列表(过滤历史已处理)
+                event_list = [event for event in device_instance.get_event_list() if event.fileId not in device_data]
+                _LOGGER.info('设备 %s 本次共获取到%d条门铃事件', device_name, len(event_list))
+                total_events += len(event_list)
+
+                # 处理并下载视频
+                success_count = 0
+                total_device_events = len(event_list)
+
+                for event_idx, event in enumerate(event_list, 1):
+                    try:
+                        device_data[event.fileId] = event._asdict()
+
+                        _LOGGER.info('[%s] [%d/%d] %s,视频下载中...',
+                                    device_name, event_idx, total_device_events, event.event_desc())
+                        # 获取ffmpeg路径
+                        ffmpeg_path = self.conf.get_ffmpeg_path()
+                        _LOGGER.debug(f'使用FFmpeg路径: {ffmpeg_path}')
+
+                        # 保存视频到指定文件
+                        _LOGGER.debug(f'配置信息: save_path="{self.conf.save_path}", merge={self.conf.merge}, ffmpeg="{ffmpeg_path}", cleanup_ts_files={self.conf.cleanup_ts_files}')
+                        path = device_instance.download_video(event, self.conf.save_path, self.conf.merge, ffmpeg_path, self.conf.cleanup_ts_files, device_name)
+                        _LOGGER.info('[%s] [%d/%d] ✅ 视频已保存到：%s',
+                                    device_name, event_idx, total_device_events, path)
+
+                        # 更新数据结构并立即保存
+                        data[device_key] = device_data
+                        self._save_processed_data(data)
+                        success_count += 1
+                        total_success += 1
+                        _LOGGER.debug('[%s] 已保存处理记录，当前成功: %d/%d', device_name, success_count, len(event_list))
+
+                    except Exception as e:
+                        _LOGGER.error('[%s] 处理事件 %s 时出错: %s', device_name, event.fileId, e)
+                        # 从数据中移除失败的事件，避免重复处理
+                        if event.fileId in device_data:
+                            del device_data[event.fileId]
+                        # 继续处理下一个事件，不中断整个流程
+                        continue
+
+                _LOGGER.info('=== 设备 %s 处理完成: %d/%d 条事件（成功/总数），历史总处理 %d 条事件 ===',
+                            device_name, success_count, len(event_list), len(device_data))
+
+            # 显示总体进度汇总
+            _LOGGER.info('')
+            _LOGGER.info('🎉 所有设备处理完成！')
+            _LOGGER.info('📊 总体统计:')
+            _LOGGER.info('   • 设备数量: %d 个', len(self.devices))
+            _LOGGER.info('   • 总事件数: %d 条', total_events)
+            _LOGGER.info('   • 成功下载: %d 条', total_success)
+            _LOGGER.info('   • 成功率: %.1f%%', (total_success / total_events * 100) if total_events > 0 else 0)
+            _LOGGER.info('')
+            return total_success
         except Exception as e:
             _LOGGER.error('检查和下载视频时出错: %s', e)
             return 0
@@ -279,28 +332,23 @@ class MiDoorbellManager:
         if os.path.exists(self.data_path):
             with open(self.data_path, 'r') as f:
                 data = json.load(f)
+
+        # 检查是否需要从旧格式迁移
+        if data and not any(isinstance(v, dict) and 'eventTime' in v for v in data.values() if isinstance(v, dict)):
+            # 这是新格式（按设备组织），无需迁移
+            pass
+        elif data and hasattr(self, 'devices') and self.devices:
+            # 旧格式迁移：为每个设备创建独立的数据结构
+            old_events = data.copy()
+            data = {}
+            for device_did in self.devices.keys():
+                data[str(device_did)] = old_events.copy()
+            _LOGGER.info('已迁移旧数据格式到多设备结构，共 %d 个设备', len(self.devices))
+
         return data
 
     def _save_processed_data(self, data):
-        """保存已处理的数据，包含设备信息"""
-        # 添加设备信息到数据中
-        if hasattr(self, 'device') and self.device:
-            device_info = {
-                'name': self.device.name,
-                'did': self.device.miot_did,
-                'model': self.device.model,
-                'type': self.device_type
-            }
-
-            # 如果数据中已有设备信息，检查是否一致
-            if 'device_info' in data:
-                if data['device_info'] != device_info:
-                    _LOGGER.info('设备信息已更新，新设备: %s', device_info['name'])
-            else:
-                _LOGGER.info('添加设备信息: %s', device_info['name'])
-
-            data['device_info'] = device_info
-
+        """保存已处理的数据，按设备组织"""
         with open(self.data_path, 'w') as fp:
             json.dump(data, fp, ensure_ascii=False, indent=True)
 

@@ -23,7 +23,7 @@ class Config(NamedTuple):
         return self.ffmpeg
 
 
-def from_file(path='config.json') -> Config:
+def from_file(path='config/config.json') -> Config:
     with open(path, 'r') as f:
         config = json.load(f)
         return Config(**config)

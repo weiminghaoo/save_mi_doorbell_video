@@ -17,6 +17,7 @@ RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple && \
 # 复制应用代码
 COPY main.py ./
 COPY src/ ./src/
+COPY config/ ./config/
 
 # 创建视频目录并设置权限
 RUN mkdir -p ./video && \

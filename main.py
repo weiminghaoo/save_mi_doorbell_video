@@ -23,7 +23,7 @@ doorbell_logger.setLevel(logging.DEBUG)
 class MiDoorbellManager:
     """小米门铃管理器"""
 
-    def __init__(self, config_path='config.json'):
+    def __init__(self, config_path='config/config.json'):
         """初始化管理器"""
         self.conf = config.from_file(config_path)
         self.cloud = None

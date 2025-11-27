@@ -7,9 +7,17 @@ services:
     restart: unless-stopped
     environment:
       - TZ=Asia/Shanghai
+      # 可选：使用环境变量替代配置文件
+      # - MI_USERNAME=your_xiaomi_account
+      # - MI_PASSWORD=your_xiaomi_password
+      # - MI_SAVE_PATH=./video
+      # - MI_SCHEDULE_MINUTES=10
+      # - MI_MERGE=true
+      # - MI_USE_QR_LOGIN=true
+      # - MI_CLEANUP_TS_FILES=true
     user: "1000:1000"  # 使用与主机相同的用户ID
     volumes:
-      - ./config1:/app/config
+      - ./config:/app/config
       - ./video:/app/video
     logging:
       driver: "json-file"

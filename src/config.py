@@ -24,6 +24,31 @@ class Config(NamedTuple):
 
 
 def from_file(path='config/config.json') -> Config:
+    # 如果配置文件不存在，创建默认配置文件
+    if not os.path.exists(path):
+        default_config = {
+            "username": "",
+            "password": "",
+            "save_path": "./video",
+            "ffmpeg": "/opt/homebrew/bin/ffmpeg",
+            "schedule_minutes": 10,
+            "merge": True,
+            "use_qr_login": True,
+            "cleanup_ts_files": True
+        }
+
+        # 确保配置目录存在
+        config_dir = os.path.dirname(path)
+        if config_dir and not os.path.exists(config_dir):
+            os.makedirs(config_dir, exist_ok=True)
+
+        # 创建默认配置文件
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(default_config, f, ensure_ascii=False, indent=4)
+
+        print(f"已自动创建配置文件: {path}")
+        print("请编辑配置文件并填入您的米家账号信息")
+
     with open(path, 'r') as f:
         config = json.load(f)
         return Config(**config)

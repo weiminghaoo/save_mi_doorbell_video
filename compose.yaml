@@ -9,7 +9,7 @@ services:
       - TZ=Asia/Shanghai
     user: "1000:1000"  # 使用与主机相同的用户ID
     volumes:
-      - ./config.json:/app/config.json:ro
+      - ./config1:/app/config
       - ./video:/app/video
     logging:
       driver: "json-file"

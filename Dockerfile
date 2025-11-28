@@ -1,19 +1,14 @@
 FROM python:3.11-slim
 
 # 完全替换 apt 源为清华源
-RUN echo "deb https://mirrors.tuna.tsinghua.edu.cn/debian/ bullseye main contrib non-free" > /etc/apt/sources.list && \
-    echo "deb https://mirrors.tuna.tsinghua.edu.cn/debian/ bullseye-updates main contrib non-free" >> /etc/apt/sources.list && \
-    echo "deb https://mirrors.tuna.tsinghua.edu.cn/debian-security/ bullseye-security main contrib non-free" >> /etc/apt/sources.list && \
-    # 删除可能存在的其他源配置文件
-    rm -f /etc/apt/sources.list.d/* && \
+RUN sed -i 's/deb http:\/\/deb\.debian\.org\/debian\/ bullseye/deb https:\/\/mirrors\.tuna\.tsinghua\.edu\.cn\/debian\/ bullseye/g' /etc/apt/sources.list && \
+    sed -i 's/deb http:\/\/deb\.debian\.org\/debian\/ bullseye-updates/deb https:\/\/mirrors\.tuna\.tsinghua\.edu\.cn\/debian\/ bullseye-updates/g' /etc/apt/sources.list && \
+    sed -i 's/deb http:\/\/security\.debian\.org\/debian-security\/ bullseye-security/deb https:\/\/mirrors\.tuna\.tsinghua\.edu\.cn\/debian-security\/ bullseye-security/g' /etc/apt/sources.list && \
     # 禁用检查软件包有效期
     echo "Acquire::Check-Valid-Until false;" > /etc/apt/apt.conf.d/99no-check-valid-until
 
-# 安装系统依赖 - 先尝试安装更基础的包解决依赖问题
+# 安装系统依赖
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-       libavformat58 libavcodec58 libavutil56 libswscale5 libavfilter7 \
-    && \
     apt-get install -y --no-install-recommends ffmpeg \
     && \
     apt-get clean && \

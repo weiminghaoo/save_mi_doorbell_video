@@ -10,7 +10,9 @@ RUN echo "deb https://mirrors.tuna.tsinghua.edu.cn/debian/ bullseye main contrib
     echo "Acquire::Check-Valid-Until false;" > /etc/apt/apt.conf.d/99no-check-valid-until
 
 # 安装系统依赖
-RUN apt-get update && apt-get install -y ffmpeg && \
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get install -y ffmpeg && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

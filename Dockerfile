@@ -9,10 +9,13 @@ RUN echo "deb https://mirrors.tuna.tsinghua.edu.cn/debian/ bullseye main contrib
     # 禁用检查软件包有效期
     echo "Acquire::Check-Valid-Until false;" > /etc/apt/apt.conf.d/99no-check-valid-until
 
-# 安装系统依赖
+# 安装系统依赖 - 先尝试安装更基础的包解决依赖问题
 RUN apt-get update && \
-    apt-get upgrade -y && \
-    apt-get install -y ffmpeg && \
+    apt-get install -y --no-install-recommends \
+       libavformat58 libavcodec58 libavutil56 libswscale5 libavfilter7 \
+    && \
+    apt-get install -y --no-install-recommends ffmpeg \
+    && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

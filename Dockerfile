@@ -1,16 +1,7 @@
 FROM python:3.11-slim
 
-# 完全替换 apt 源为清华源
-RUN sed -i 's/deb http:\/\/deb\.debian\.org\/debian\/ bullseye/deb https:\/\/mirrors\.tuna\.tsinghua\.edu\.cn\/debian\/ bullseye/g' /etc/apt/sources.list && \
-    sed -i 's/deb http:\/\/deb\.debian\.org\/debian\/ bullseye-updates/deb https:\/\/mirrors\.tuna\.tsinghua\.edu\.cn\/debian\/ bullseye-updates/g' /etc/apt/sources.list && \
-    sed -i 's/deb http:\/\/security\.debian\.org\/debian-security\/ bullseye-security/deb https:\/\/mirrors\.tuna\.tsinghua\.edu\.cn\/debian-security\/ bullseye-security/g' /etc/apt/sources.list && \
-    # 禁用检查软件包有效期
-    echo "Acquire::Check-Valid-Until false;" > /etc/apt/apt.conf.d/99no-check-valid-until
-
 # 安装系统依赖
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg \
-    && \
+RUN apt-get update && apt-get install -y ffmpeg && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

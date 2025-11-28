@@ -1,5 +1,11 @@
 FROM python:3.11-slim
 
+# 设置清华源
+RUN sed -i 's/deb http:\/\/deb.debian.org/deb https:\/\/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list && \
+    sed -i 's/deb-src http:\/\/deb.debian.org/deb-src https:\/\/mirrors.tuna.tsinghua.edu.cn/g' /etc/apt/sources.list && \
+    sed -i 's/deb http:\/\/security.debian.org/deb https:\/\/mirrors.tuna.tsinghua.edu.cn\/debian-security/g' /etc/apt/sources.list && \
+    sed -i 's/deb-src http:\/\/security.debian.org/deb-src https:\/\/mirrors.tuna.tsinghua.edu.cn\/debian-security/g' /etc/apt/sources.list
+
 # 安装系统依赖
 RUN apt-get update && apt-get install -y ffmpeg && \
     apt-get clean && \

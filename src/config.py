@@ -23,19 +23,19 @@ class Config(NamedTuple):
         return self.ffmpeg
 
 
-def from_file(path='config/config.json') -> Config:
+def from_file(path='/app/config/config.json') -> Config:
     # 优先尝试从环境变量读取配置
     if os.getenv('MI_USERNAME') and os.getenv('MI_PASSWORD'):
         print("使用环境变量配置")
         return Config(
             username=os.getenv('MI_USERNAME', ''),
             password=os.getenv('MI_PASSWORD', ''),
-            save_path=os.getenv('MI_SAVE_PATH', './video'),
+            save_path=os.getenv('MI_SAVE_PATH', '/app/video'),
             ffmpeg=os.getenv('MI_FFMPEG', '/opt/homebrew/bin/ffmpeg'),
             schedule_minutes=int(os.getenv('MI_SCHEDULE_MINUTES', '10')),
-            merge=os.getenv('MI_MERGE', 'true').lower() == 'true',
-            use_qr_login=os.getenv('MI_USE_QR_LOGIN', 'true').lower() == 'true',
-            cleanup_ts_files=os.getenv('MI_CLEANUP_TS_FILES', 'true').lower() == 'true'
+            merge=True,
+            use_qr_login=True,
+            cleanup_ts_files=True
         )
 
     # 如果配置文件不存在，创建默认配置文件

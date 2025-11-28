@@ -1,10 +1,15 @@
 FROM python:3.11-slim
 
-# 设置清华源
-RUN echo "deb https://mirrors.tuna.tsinghua.edu.cn/debian/ bullseye main contrib non-free" > /etc/apt/sources.list && \
+# 备份原始源并设置清华源
+RUN cp /etc/apt/sources.list /etc/apt/sources.list.bak && \
+    echo "deb https://mirrors.tuna.tsinghua.edu.cn/debian/ bullseye main contrib non-free" > /etc/apt/sources.list && \
     echo "deb https://mirrors.tuna.tsinghua.edu.cn/debian/ bullseye-updates main contrib non-free" >> /etc/apt/sources.list && \
     echo "deb https://mirrors.tuna.tsinghua.edu.cn/debian/ bullseye-backports main contrib non-free" >> /etc/apt/sources.list && \
-    echo "deb https://mirrors.tuna.tsinghua.edu.cn/debian-security/ bullseye-security main contrib non-free" >> /etc/apt/sources.list
+    echo "deb https://mirrors.tuna.tsinghua.edu.cn/debian-security/ bullseye-security main contrib non-free" >> /etc/apt/sources.list && \
+    # 清理可能存在的其他源配置
+    rm -f /etc/apt/sources.list.d/* && \
+    # 确保禁用任何额外的源
+    echo "Acquire::Check-Valid-Until false;" > /etc/apt/apt.conf.d/99no-check-valid-until
 
 # 安装系统依赖
 RUN apt-get update && apt-get install -y ffmpeg && \
